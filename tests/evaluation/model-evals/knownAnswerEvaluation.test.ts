@@ -4,9 +4,20 @@ import { describe, expect, it } from "vitest";
 import { toolContract } from "../../../src/contracts/toolContracts.js";
 import { createEvidence, type Evidence } from "../../../src/domain/evidence.js";
 import type { JsonValue } from "../../../src/domain/jsonValue.js";
-import { evaluateCodexEvents } from "../../../src/evaluation/CodexAgentEval.js";
+import { evaluateAgentTranscript } from "../../../src/evaluation/AgentEval.js";
+import { parseCodexEvents } from "../../../src/evaluation/AgentTranscript.js";
 import type { FixtureClaimExpectation } from "../../../src/evaluation/KnownAnswerEvaluation.js";
 import { ToolResultDelivery } from "../../../src/server/toolResult.js";
+
+const evaluateCodexEvents = (
+  events: readonly unknown[],
+  ...options: Parameters<typeof evaluateAgentTranscript> extends [
+    unknown,
+    ...infer Rest,
+  ]
+    ? Rest
+    : never
+) => evaluateAgentTranscript(parseCodexEvents(events), ...options);
 
 const delivery = new ToolResultDelivery(STDIO_DEFAULT_MAX_BUFFER_SIZE);
 

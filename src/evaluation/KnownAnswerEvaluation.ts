@@ -2,6 +2,7 @@ import { visit } from "jsonc-parser";
 import { z } from "zod";
 
 import { parseEvidence, type Evidence } from "../domain/evidence.js";
+import type { AgentToolCall } from "./AgentTranscript.js";
 import { jsonValueSchema, type JsonValue } from "../domain/jsonValue.js";
 import { compareUnicodeCodePoints } from "../domain/unicodeCodePointOrder.js";
 
@@ -168,78 +169,21 @@ interface DeliveredEvidence {
   readonly conflicts: Set<string>;
 }
 
-const consistentAliases = (
-  value: Record<string, unknown>,
-  left: string,
-  right: string,
-): boolean =>
-  value[left] === undefined ||
-  value[right] === undefined ||
-  value[left] === value[right];
-
-const completedCall = (event: unknown): Record<string, unknown> | undefined => {
-  const value = record(event);
-  const item =
-    value?.type === "item.completed"
-      ? record(value.item)
-      : value?.type === "mcp_tool_call" && value.status === "completed"
-        ? value
-        : undefined;
-  if (item?.type !== "mcp_tool_call") return undefined;
-  const server = item.server ?? item.server_name;
+const evidenceFromCall = (call: AgentToolCall): Evidence | undefined => {
+  const { result } = call;
   if (
-    typeof server !== "string" ||
-    server.toLowerCase() !== "rea" ||
-    (item.status !== undefined && item.status !== "completed") ||
-    (item.error !== undefined && item.error !== null)
-  )
-    return undefined;
-  if (
-    !consistentAliases(item, "server", "server_name") ||
-    !consistentAliases(item, "tool", "name")
-  )
-    return undefined;
-  return item;
-};
-
-const consistentJsonAliases = (
-  value: Record<string, unknown>,
-  left: string,
-  right: string,
-): boolean =>
-  value[left] === undefined ||
-  value[left] === null ||
-  value[right] === undefined ||
-  value[right] === null ||
-  sameJson(value[left], value[right]);
-
-const evidenceFromCall = (
-  item: Record<string, unknown>,
-): Evidence | undefined => {
-  if (!consistentJsonAliases(item, "result", "output")) return undefined;
-  const result = record(item.result ?? item.output);
-  if (
+    !call.delivered ||
+    call.server?.toLowerCase() !== "rea" ||
     result === undefined ||
-    result.isError === true ||
-    (result.error !== undefined && result.error !== null)
+    result.isError
   )
     return undefined;
-  if (
-    result.structuredContent !== undefined &&
-    result.structured_content !== undefined &&
-    !sameJson(result.structuredContent, result.structured_content)
-  )
-    return undefined;
-  let value = result.structuredContent ?? result.structured_content;
+  let value = result.structuredContent;
   if (value === undefined || value === null) {
-    // Some Codex transcripts retain only the complete MCP JSON text block.
+    // Some clients retain only the complete MCP JSON text block.
     // Prose, multiple blocks, and truncated previews cannot establish delivery.
-    if (!Array.isArray(result.content) || result.content.length !== 1)
-      return undefined;
-    const block = record(result.content[0]);
-    if (block?.type !== "text" || typeof block.text !== "string")
-      return undefined;
-    value = parseClosedJson(block.text);
+    if (result.text === undefined) return undefined;
+    value = parseClosedJson(result.text);
   }
   const structured = record(value);
   if (
@@ -254,15 +198,13 @@ const evidenceFromCall = (
     // Transcript output is untrusted; invalid Evidence cannot support a claim.
     return undefined;
   }
-  if ((item.tool ?? item.name) !== evidence.operation) return undefined;
+  if (call.tool !== evidence.operation) return undefined;
   return evidence;
 };
 
 /** Authenticate completed REA deliveries for both citations and fixture grading. */
-export const deliveredCodexEvidence = (event: unknown): readonly Evidence[] => {
-  const item = completedCall(event);
-  if (item === undefined) return [];
-  const evidence = evidenceFromCall(item);
+export const deliveredEvidence = (call: AgentToolCall): readonly Evidence[] => {
+  const evidence = evidenceFromCall(call);
   if (evidence === undefined) return [];
   const records = [evidence];
   // Artifact inspection delivers its inventory Evidence inline. Bare links and
@@ -294,12 +236,12 @@ export const deliveredCodexEvidence = (event: unknown): readonly Evidence[] => {
 };
 
 const collectDeliveredEvidence = (
-  events: readonly unknown[],
+  calls: readonly AgentToolCall[],
 ): DeliveredEvidence => {
   const records = new Map<string, Evidence>();
   const conflicts = new Set<string>();
-  for (const event of events) {
-    for (const evidence of deliveredCodexEvidence(event)) {
+  for (const call of calls) {
+    for (const evidence of deliveredEvidence(call)) {
       const previous = records.get(evidence.evidence_id);
       if (previous !== undefined && !sameJson(previous, evidence))
         conflicts.add(evidence.evidence_id);
@@ -401,7 +343,7 @@ const assessClaim = (
 
 /** Grade closed answers only against configured fixture truth and delivered authenticated Evidence. */
 export const evaluateKnownAnswers = (
-  events: readonly unknown[],
+  calls: readonly AgentToolCall[],
   finalMessage: string,
   expectations: readonly FixtureClaimExpectation[] | undefined,
 ): KnownAnswerAssessment => {
@@ -441,7 +383,7 @@ export const evaluateKnownAnswers = (
       manifestFailures.push(`unknown_claim:${claim.id}`);
     submitted.set(claim.id, claim);
   }
-  const delivered = collectDeliveredEvidence(events);
+  const delivered = collectDeliveredEvidence(calls);
   const claims = expectations.map((expected) =>
     assessClaim(expected, submitted.get(expected.id), delivered),
   );

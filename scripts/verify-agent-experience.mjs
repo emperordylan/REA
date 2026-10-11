@@ -1,20 +1,13 @@
 import { spawn } from "node:child_process";
-import {
-  chmod,
-  copyFile,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
-import { evaluateCodexEvents } from "../dist/evaluation/CodexAgentEval.js";
+import { evaluateAgentTranscript } from "../dist/evaluation/AgentEval.js";
+import { parseAgentTranscript } from "../dist/evaluation/AgentTranscript.js";
 import {
   createAgentEvaluationFixtures,
   agentFixtureClaims,
@@ -25,12 +18,16 @@ import {
   summarizeFactualCorrectness,
 } from "../dist/evaluation/AgentEvaluationReport.js";
 import { PRODUCT_IDENTITY } from "../dist/identity.js";
+import {
+  prepareAgentEvalClient,
+  selectAgentEvalClient,
+} from "./lib/agent-eval-clients.mjs";
 import { completeVerifierRun, createVerifierRun } from "./lib/verifier-run.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const verifierRun = createVerifierRun();
 const timeoutMs = Number(process.env.REA_AGENT_EVAL_TIMEOUT_MS ?? 480_000);
-const codex = process.env.REA_CODEX_CLI ?? "codex";
+const client = selectAgentEvalClient(process.env.REA_AGENT_EVAL_CLIENT);
 const optionalModel = process.env.REA_AGENT_EVAL_MODEL;
 
 if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 10_000)
@@ -45,52 +42,37 @@ await mkdir(evaluationParent, { recursive: true, mode: 0o700 });
 const evaluationRoot = await mkdtemp(join(evaluationParent, "run-"));
 const fixtureRoot = join(evaluationRoot, "targets");
 const account = join(evaluationRoot, "account");
-const codexHome = join(evaluationRoot, "codex");
-const authPath = join(codexHome, "auth.json");
-const skillDestination = join(
-  account,
-  ".agents/skills/reverse-engineer-anything",
-);
-const evaluationEnvironment = {
-  ...Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([name]) => !/^(?:REA_|CODEX_|GHIDRA_|HOPPER_|IDA_)/u.test(name),
-    ),
-  ),
-  HOME: account,
-  USERPROFILE: account,
-  CODEX_HOME: codexHome,
-  XDG_CONFIG_HOME: join(account, ".config"),
-  XDG_DATA_HOME: join(account, ".local/share"),
-  XDG_CACHE_HOME: join(account, ".cache"),
-  REA_PROCESS_RUN_ID: verifierRun.run_id,
-  PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ""}`,
-};
+let authPaths = [];
 
 try {
-  const codexVersion = await readCommandVersion(codex);
-  await Promise.all([
-    mkdir(fixtureRoot, { recursive: true }),
-    mkdir(account),
-    mkdir(codexHome, { mode: 0o700 }),
-  ]);
+  const clientVersion = await readCommandVersion(client.command);
+  await Promise.all([mkdir(fixtureRoot, { recursive: true }), mkdir(account)]);
   // Reuse authentication only. User config, plugins, rules, history and skills
   // must not make a fresh installed-skill trial pass accidentally.
-  try {
-    await copyFile(
-      join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json"),
-      authPath,
-    );
-    await chmod(authPath, 0o600);
-  } catch (cause) {
-    if (cause?.code !== "ENOENT") throw cause;
-    // Environment/API-key authentication can work without a local auth file.
-  }
-  await writeFile(
-    join(codexHome, "config.toml"),
-    'approval_policy = "never"\nsandbox_mode = "read-only"\nweb_search = "disabled"\n[features]\nmulti_agent = false\nshell_snapshot = false\n[history]\npersistence = "none"\n',
-    { mode: 0o600 },
-  );
+  const prepared = await prepareAgentEvalClient(client, {
+    evaluationRoot,
+    account,
+    model: optionalModel,
+  });
+  authPaths = prepared.authPaths;
+  const evaluationEnvironment = {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([name]) =>
+          !/^(?:REA_|CODEX_|CLAUDE_|ANTHROPIC_|GEMINI_|GOOGLE_|GHIDRA_|HOPPER_|IDA_)/u.test(
+            name,
+          ),
+      ),
+    ),
+    HOME: account,
+    USERPROFILE: account,
+    XDG_CONFIG_HOME: join(account, ".config"),
+    XDG_DATA_HOME: join(account, ".local/share"),
+    XDG_CACHE_HOME: join(account, ".cache"),
+    REA_PROCESS_RUN_ID: verifierRun.run_id,
+    PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ""}`,
+    ...prepared.environment,
+  };
   for (const approval of ["--dry-run", "--yes"]) {
     await runProcess(
       process.execPath,
@@ -98,7 +80,7 @@ try {
         join(repositoryRoot, "scripts/rea.mjs"),
         "setup",
         "--client",
-        "codex",
+        client.setupClient,
         approval,
         "--json",
       ],
@@ -108,7 +90,7 @@ try {
     );
   }
   const installedSkill = await readFile(
-    join(skillDestination, "SKILL.md"),
+    join(prepared.skillDirectory, "SKILL.md"),
     "utf8",
   );
   if (!installedSkill.includes(`  version: "${PRODUCT_IDENTITY.skillVersion}"`))
@@ -252,15 +234,20 @@ try {
     );
   const results = [];
   for (const scenario of scenarios) {
-    process.stderr.write(`Running Codex agent evaluation: ${scenario.id}\n`);
+    process.stderr.write(
+      `Running ${client.id} agent evaluation: ${scenario.id}\n`,
+    );
     const fixtureId = scenario.fixtureScenarioId ?? scenario.id;
     const fixtureClaims = agentFixtureClaims(fixtureId, targets);
     const answerInstructions = agentFixtureAnswerInstructions(fixtureId);
-    const execution = await runCodex(
-      answerInstructions.length === 0
-        ? scenario.prompt
-        : `${scenario.prompt}\n\nThis closed factual rubric needs complete producer Evidence in the transcript. Request complete detail on each initial application analysis when supported; summary or view records alone are not accepted by this rubric.\n\n${answerInstructions}`,
-      scenario.approvedTools ?? [],
+    const execution = await runClient(
+      evaluationEnvironment,
+      await prepared.arguments(
+        answerInstructions.length === 0
+          ? scenario.prompt
+          : `${scenario.prompt}\n\nThis closed factual rubric needs complete producer Evidence in the transcript. Request complete detail on each initial application analysis when supported; summary or view records alone are not accepted by this rubric.\n\n${answerInstructions}`,
+        scenario.approvedTools ?? [],
+      ),
     );
     const transcriptDirectory = process.env.REA_AGENT_EVAL_TRANSCRIPT_DIR;
     if (transcriptDirectory !== undefined) {
@@ -274,8 +261,8 @@ try {
         `${execution.events.map((event) => JSON.stringify(event)).join("\n")}\n`,
       );
     }
-    const metrics = evaluateCodexEvents(
-      execution.events,
+    const metrics = evaluateAgentTranscript(
+      parseAgentTranscript(client.id, execution.events),
       scenario.expectedFirstTool,
       {
         requireEvidence: scenario.requiresEvidence,
@@ -313,17 +300,22 @@ try {
 
   const factualCorrectness = summarizeFactualCorrectness(results);
   const summary = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     evaluationScope: "routing_workflow_and_configured_fixture_claims",
     factualCorrectness,
     verifier_run: await completeVerifierRun(verifierRun),
-    codex,
-    codexVersion,
+    client: client.id,
+    clientCommand: client.command,
+    clientVersion,
+    ...(client.id === "codex"
+      ? { codex: client.command, codexVersion: clientVersion }
+      : {}),
     model: optionalModel ?? null,
     installation: {
-      method: "rea_setup_codex",
+      method: `rea_setup_${client.setupClient}`,
       isolatedHome: true,
-      isolatedCodexHome: true,
+      isolatedClientHome: true,
+      ...(client.id === "codex" ? { isolatedCodexHome: true } : {}),
       skillVersion: PRODUCT_IDENTITY.skillVersion,
       authentication: "caller_auth_only_removed_after_run",
     },
@@ -380,7 +372,7 @@ try {
     );
 } finally {
   // Even a deliberately retained fixture directory must never retain auth.
-  await rm(authPath, { force: true });
+  await Promise.all(authPaths.map((path) => rm(path, { force: true })));
   if (process.env.REA_AGENT_EVAL_KEEP_FIXTURES !== "true")
     await rm(evaluationRoot, { recursive: true, force: true });
 }
@@ -457,31 +449,10 @@ function validTargetClarification(message) {
   }
 }
 
-async function runCodex(prompt, approvedTools) {
-  const arguments_ = [
-    "--no-daemon",
-    "exec",
-    "--ephemeral",
-    "--skip-git-repo-check",
-    "--sandbox",
-    "read-only",
-    "--json",
-    "--color",
-    "never",
-    "-C",
-    evaluationRoot,
-    "-c",
-    'approval_policy="never"',
-    ...approvedTools.flatMap((name) => [
-      "-c",
-      `mcp_servers.rea.tools.${name}.approval_mode="approve"`,
-    ]),
-    ...(optionalModel === undefined ? [] : ["--model", optionalModel]),
-    prompt,
-  ];
-  const child = spawn(codex, arguments_, {
+async function runClient(env, arguments_) {
+  const child = spawn(client.command, arguments_, {
     cwd: evaluationRoot,
-    env: evaluationEnvironment,
+    env,
     stdio: ["ignore", "pipe", "pipe"],
   });
   const events = [];
@@ -504,7 +475,9 @@ async function runCodex(prompt, approvedTools) {
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
       reject(
-        new Error(`Codex evaluation timed out after ${String(timeoutMs)}ms`),
+        new Error(
+          `${client.id} evaluation timed out after ${String(timeoutMs)}ms`,
+        ),
       );
     }, timeoutMs);
     child.once("error", (cause) => {
