@@ -53,6 +53,20 @@ const sessionEvidence = effects({ mutatesSession: true });
 
 /** Explicit effect audit for every public tool. */
 export const TOOL_EFFECTS: Readonly<Record<string, ToolEffects>> = {
+  inspect_with_objdump: effects({
+    mutatesSession: true,
+    launchesProcess: true,
+  }),
+  execute_rizin_command: effects({
+    mutatesTarget: true,
+    mutatesSession: true,
+    writesFilesystem: true,
+    launchesProcess: true,
+    accessesNetwork: true,
+    mayDiscardData: true,
+    executesForeignCode: true,
+    idempotent: false,
+  }),
   inspect_go_binary: evidence,
   inspect_wasm_artifact: effects({
     mutatesSession: true,

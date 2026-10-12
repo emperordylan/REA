@@ -75,6 +75,8 @@ export interface BinarySessionPort
     operation?: AnalysisOperation,
   ): AnalysisProfileCommitment | undefined;
   allowsSnapshotReplay(operation: AnalysisOperation): boolean;
+  /** Invalidate cached Evidence before an external command may mutate the target. */
+  invalidateSnapshotForExternalMutation(): void;
   recordWorkflowSnapshot(
     input: WorkflowSnapshotRecordInput,
   ): Result<null, EvidenceIntegrityError>;

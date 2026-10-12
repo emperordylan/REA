@@ -19,6 +19,8 @@ export const toolFamilyCatalog = (sources) => {
       contracts: [
         ...sources.nativeContracts.NATIVE_TOOL_CONTRACTS,
         ...sources.binaryDiagnosticsContracts.BINARY_DIAGNOSTICS_TOOL_CONTRACTS,
+        ...sources.reverseEngineeringContracts
+          .REVERSE_ENGINEERING_TOOL_CONTRACTS,
       ],
     },
     {
@@ -145,6 +147,20 @@ export const providerCatalog = (sources) => {
     activeContracts,
   } = electronContractSlices(sources);
   return [
+    {
+      identity: sources.objdumpProvider.OBJDUMP_PROVIDER_IDENTITY,
+      contracts:
+        sources.reverseEngineeringContracts.REVERSE_ENGINEERING_TOOL_CONTRACTS.filter(
+          ({ name }) => name === "inspect_with_objdump",
+        ),
+    },
+    {
+      identity: sources.rizinProvider.RIZIN_PROVIDER_IDENTITY,
+      contracts:
+        sources.reverseEngineeringContracts.REVERSE_ENGINEERING_TOOL_CONTRACTS.filter(
+          ({ name }) => name === "execute_rizin_command",
+        ),
+    },
     {
       identity: sources.hopperProvider.HOPPER_PROVIDER_IDENTITY,
       contracts: declaredContracts(

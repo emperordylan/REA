@@ -143,6 +143,12 @@ function expectKnownAuthorityHints(tools: readonly ToolSchemas[]): void {
       readOnlyHint: false,
       destructiveHint: false,
     },
+    execute_rizin_command: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
   } as const;
 
   for (const [name, annotations] of Object.entries(expected))

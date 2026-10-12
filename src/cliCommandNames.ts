@@ -42,6 +42,8 @@ export const CLI_COMMANDS = Object.freeze({
   inspectManagedArtifact: "inspect-managed-artifact",
   inspectRecordedCrash: "inspect-recorded-crash",
   inspectBinaryLayout: "inspect-binary-layout",
+  inspectWithObjdump: "inspect-with-objdump",
+  executeRizinCommand: "execute-rizin-command",
   inspectGoBinary: "inspect-go-binary",
   inspectPeResources: "inspect-pe-resources",
   inspectAnalysisView: "inspect-analysis-view",
@@ -149,6 +151,8 @@ export const CLI_COMMAND_TOOL_ALIASES = Object.freeze({
   search: ["search_strings", "search_procedures"],
   "capture-process": ["capture_process_scenario"],
   "compare-bundles": ["compare_bundles"],
+  "inspect-with-objdump": ["inspect_with_objdump"],
+  "execute-rizin-command": ["execute_rizin_command"],
 });
 
 /** MCP operations without a dedicated CLI command or direct command alias. */
