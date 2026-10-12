@@ -311,6 +311,9 @@ const artifactStateErrorDetails = (
       operation: error.operation,
       reason: error.reason,
       ...(error.path === undefined ? {} : { path: error.path }),
+      ...(error.evidenceId === undefined
+        ? {}
+        : { evidence_id: error.evidenceId }),
       ...(error.published === undefined
         ? {}
         : {

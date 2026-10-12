@@ -1,8 +1,11 @@
+import { resolve } from "node:path";
+
 import {
   createImmutableEvidenceBundle,
   describeEvidenceBundleFailure,
   describeValidationFailure,
   parseEvidenceBundle,
+  singleEvidenceRecordId,
   type EvidenceBundle,
 } from "../domain/evidenceBundle.js";
 import {
@@ -79,6 +82,16 @@ const readBundle = async (
   try {
     bundle = parseBundle(loaded.value);
   } catch (cause: unknown) {
+    // An intact record is the wrong selected file, not damaged bundle content.
+    const evidenceId = singleEvidenceRecordId(loaded.value);
+    if (evidenceId !== undefined)
+      return err(
+        new EvidenceFileError("read", "not-bundle", {
+          cause,
+          path: resolve(path),
+          evidenceId,
+        }),
+      );
     return err(
       new EvidenceIntegrityError("Evidence bundle validation failed", {
         cause,

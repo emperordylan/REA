@@ -50,17 +50,27 @@ export class EvidenceFileError extends AnalysisError {
   readonly path: string | undefined;
   /** Present only when a write committed before cleanup failed. */
   readonly published: PublishedEvidenceFile | undefined;
+  /** The single Evidence record found where a bundle was expected. */
+  readonly evidenceId: string | undefined;
 
   constructor(
     readonly operation: "read" | "write",
-    readonly reason: "not-file" | "exists" | "invalid-json" | "missing" | "io",
+    readonly reason:
+      | "not-file"
+      | "not-bundle"
+      | "exists"
+      | "invalid-json"
+      | "missing"
+      | "io",
     options?: AnalysisErrorOptions & {
       readonly path?: string;
       readonly published?: PublishedEvidenceFile;
+      readonly evidenceId?: string;
     },
   ) {
     super(`Evidence bundle ${operation} failed: ${reason}`, options);
     this.path = options?.path;
     this.published = options?.published;
+    this.evidenceId = options?.evidenceId;
   }
 }

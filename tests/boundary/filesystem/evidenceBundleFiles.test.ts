@@ -439,13 +439,15 @@ describe("evidence bundle filesystem adapter", () => {
     const record = bundle().records[0];
     const single = join(directory, "record.json");
     await writeFile(single, JSON.stringify(record));
+    // An intact record is the caller's file selection, not damaged content.
     expect(await readEvidenceBundle(single)).toMatchObject({
       ok: false,
       error: {
-        _tag: "EvidenceIntegrityError",
-        userMessage: expect.stringContaining(
-          `this JSON is one Evidence record (${String(record?.evidence_id)})`,
-        ),
+        _tag: "EvidenceFileError",
+        operation: "read",
+        reason: "not-bundle",
+        path: single,
+        evidenceId: record?.evidence_id,
       },
     });
 

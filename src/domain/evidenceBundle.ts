@@ -212,13 +212,24 @@ export const describeEvidenceBundleFailure = (
   input: unknown,
   cause: unknown,
 ): string => {
-  const record = evidenceSchema.safeParse(input);
-  if (record.success)
-    return `Expected an Evidence bundle with records and manifest arrays, but this JSON is one Evidence record (${record.data.evidence_id}). Export a session bundle with the MCP export_evidence_bundle tool and supply that file.`;
+  const recordId = singleEvidenceRecordId(input);
+  if (recordId !== undefined) return singleEvidenceRecordMessage(recordId);
   return cause instanceof z.ZodError
     ? `Evidence bundle does not match the bundle schema ${describeValidationFailure(cause)}. Supply an unmodified bundle written by export_evidence_bundle or rea evidence-export.`
     : `Evidence bundle validation failed: ${describeValidationFailure(cause)}. Recreate or re-export the bundle, then try again.`;
 };
+
+/** Identify a single Evidence record supplied where a bundle is expected. */
+export const singleEvidenceRecordId = (input: unknown): string | undefined => {
+  const record = evidenceSchema.safeParse(input);
+  return record.success ? record.data.evidence_id : undefined;
+};
+
+/** Explain how to obtain a bundle when one Evidence record was supplied. */
+export const singleEvidenceRecordMessage = (
+  evidenceId: string | undefined,
+): string =>
+  `Expected an Evidence bundle with records and manifest arrays, but this JSON is one Evidence record${evidenceId === undefined ? "" : ` (${evidenceId})`}. Export a session bundle with the MCP export_evidence_bundle tool and supply that file.`;
 
 /** Locate the first schema issue, or keep a thrown constraint message. */
 export const describeValidationFailure = (cause: unknown): string => {

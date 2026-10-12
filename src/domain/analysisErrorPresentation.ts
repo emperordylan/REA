@@ -26,6 +26,7 @@ import {
 } from "./hopperErrors.js";
 import { ProviderSelectionError } from "./providerSelectionError.js";
 import { UnknownRegistryError } from "./unknownRegistryError.js";
+import { singleEvidenceRecordMessage } from "./evidenceBundle.js";
 import { providerRetryAction } from "./providerOperationHealth.js";
 import type { AnalysisError, AnalysisErrorTag } from "./analysisErrorBase.js";
 import type { AnalysisErrorProjection } from "./analysisErrorProjection.js";
@@ -148,6 +149,7 @@ export const analysisErrorCategory = (
     error instanceof EvidenceFileError &&
     (error.reason === "missing" ||
       error.reason === "not-file" ||
+      error.reason === "not-bundle" ||
       error.reason === "exists")
   )
     return "invalid_input";
@@ -406,6 +408,7 @@ const evidenceFileMessage = ({
   operation,
   reason,
   published,
+  evidenceId,
 }: EvidenceFileError): string => {
   if (published !== undefined)
     return "The output file was published, but staging cleanup remains incomplete.";
@@ -415,6 +418,7 @@ const evidenceFileMessage = ({
       : "Evidence output directory does not exist. Choose an existing directory and try again.";
   if (reason === "not-file")
     return "Evidence path does not point to a regular file. Choose a file and try again.";
+  if (reason === "not-bundle") return singleEvidenceRecordMessage(evidenceId);
   if (reason === "exists")
     return "Evidence file already exists. Choose another path or allow overwrite.";
   if (reason === "invalid-json")
