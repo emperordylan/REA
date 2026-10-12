@@ -59,6 +59,7 @@ const authority = (
         directory: true,
       },
       privateDacl: true,
+      privateBridgeDescriptorAccess: true,
       atomicJobAssignment: true,
       killOnOwnerClose: true,
       protocolStdin: true,

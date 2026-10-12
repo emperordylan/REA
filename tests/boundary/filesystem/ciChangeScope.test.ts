@@ -132,6 +132,127 @@ it("does not charge a documentation PR for unrelated implementation updates on m
 });
 
 it.each([
+  "src/gdb/GdbSessionManager.ts",
+  "src/rizin/RizinDebugSessionManager.ts",
+  "src/cutter/CutterBridgeClient.ts",
+  "src/objdump/ObjdumpCommand.ts",
+  "tests/boundary/providers/GdbSessionManagerCoverage.test.ts",
+  "tests/boundary/providers/RizinDebugSessionCoverage.part3.test.ts",
+  "tests/boundary/providers/RizinCommandTimeout.test.ts",
+  "tests/boundary/providers/RizinTimeoutEvidence.test.ts",
+  "tests/boundary/providers/GdbSessionReviewRegressions.test.ts",
+  "tests/boundary/providers/RizinDebugSessionReviewRegressions.test.ts",
+  "tests/boundary/mcp/gdbCancellationMcp.test.ts",
+  "tests/boundary/mcp/rizinDebuggerCancellationMcp.test.ts",
+  "vitest.reverse-tools.config.ts",
+  "vitest.reverse-tools-semantics.config.ts",
+  "stryker.config.json",
+  "stryker.semantics.config.json",
+  "tsconfig.reverse-tools-mutation.json",
+  "scripts/prepare-reverse-tools-mutation.mjs",
+])(
+  "selects the reverse-tool coverage and mutation gate for %s",
+  async (path) => {
+    const { directory, base } = await fixture();
+    const head = await change(directory, [path]);
+    expect(await classify(directory, base, head)).toMatchObject({
+      code: true,
+      reverse_tools: true,
+    });
+  },
+);
+
+const reverseToolsVitestConfig = await readFile(
+  new URL("../../../vitest.reverse-tools.config.ts", import.meta.url),
+  "utf8",
+);
+const reverseToolsVitestInputs = [
+  ...reverseToolsVitestConfig.matchAll(/"((?:\.\/)?(?:src|tests)\/[^"]+)"/gu),
+].flatMap((match) =>
+  match[1] === undefined ? [] : [match[1].replace(/^\.\//u, "")],
+);
+const reverseToolsMutationConfig = JSON.parse(
+  await readFile(
+    new URL("../../../tsconfig.reverse-tools-mutation.json", import.meta.url),
+    "utf8",
+  ),
+) as { include: string[] };
+const reverseToolsInputs = [...new Set([
+  ...reverseToolsVitestInputs,
+  ...reverseToolsMutationConfig.include.map((path) =>
+    path.replace(/^\.\//u, ""),
+  ),
+])];
+
+it.each(reverseToolsInputs)(
+  "selects the reverse-tool quality gate for configured input %s",
+  async (path) => {
+    const { directory, base } = await fixture();
+    const head = await change(directory, [path]);
+    expect(await classify(directory, base, head)).toMatchObject({
+      code: true,
+      reverse_tools: true,
+    });
+  },
+);
+
+it("requires the reverse-tool gate when its scope is selected", async () => {
+  const workflow = parse(
+    await readFile(
+      new URL("../../../.github/workflows/ci.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+  expect(workflow.jobs["reverse-tools-quality"].if).toBe(
+    "needs.changes.outputs.reverse_tools == 'true'",
+  );
+  expect(workflow.jobs.required.needs).toContain("reverse-tools-quality");
+  const command = new URL("../../../scripts/ci/required.mjs", import.meta.url)
+    .pathname;
+  await expect(
+    execFileAsync(process.execPath, [command], {
+      env: {
+        ...process.env,
+        CI_JOBS: JSON.stringify({
+          changes: { result: "success", outputs: { reverse_tools: "true" } },
+          static: { result: "success" },
+          test: { result: "success" },
+          "reverse-tools-quality": { result: "skipped" },
+        }),
+      },
+    }),
+  ).rejects.toMatchObject({ code: 1 });
+  await expect(
+    execFileAsync(process.execPath, [command], {
+      env: {
+        ...process.env,
+        CI_JOBS: JSON.stringify({
+          changes: { result: "success", outputs: { reverse_tools: "true" } },
+          static: { result: "success" },
+          test: { result: "success" },
+          "reverse-tools-quality": { result: "failure" },
+        }),
+      },
+    }),
+  ).rejects.toMatchObject({ code: 1 });
+  await expect(
+    execFileAsync(process.execPath, [command], {
+      env: {
+        ...process.env,
+        CI_JOBS: JSON.stringify({
+          changes: { result: "success", outputs: { reverse_tools: "true" } },
+          static: { result: "success" },
+          test: { result: "success" },
+          "reverse-tools-quality": { result: "success" },
+        }),
+      },
+    }),
+  ).resolves.toMatchObject({
+    stdout: expect.stringContaining("Every selected CI lane passed"),
+  });
+});
+
+it.each([
   "src/README.md",
   "README.md.ts",
   "bridge/ghidra/provider.py",

@@ -81,4 +81,9 @@ export const TOOL_EXAMPLE_OVERRIDES: Readonly<
     left_bundle_path: "/tmp/left-evidence.json",
     right_bundle_path: "/tmp/right-evidence.json",
   },
+  inspect_with_objdump: {
+    path: "/tmp/program",
+    operation: "disassemble",
+  },
+  execute_rizin_command: { path: "/tmp/program", command: "iI" },
 };

@@ -139,6 +139,10 @@ process.stdout.write(JSON.stringify({executable:basename(process.execPath),abiVe
     "//localhost/share/target.bin",
   ])
     assert.throws(() => native.call("open", [rejected]));
+  assert.throws(
+    () => native.call("cutter_bridge_verify_directory", [sourceDirectory]),
+    /owner|DACL/u,
+  );
   report.controls.ordinaryDriveSeparatorsAndRequestedIdentity = true;
   const driveRoot = parse(workspace).root;
   const runtimeParent = ghidraSessionRoot({
@@ -249,6 +253,10 @@ process.stdout.write(JSON.stringify({executable:basename(process.execPath),abiVe
     () => native.call("open", [join(junction, "target.bin")]),
     /Reparse/u,
   );
+  assert.throws(
+    () => native.call("cutter_bridge_verify_directory", [junction]),
+    /Reparse/u,
+  );
   assert.throws(() => native.call("open", [source + ":stream"]));
   const runtime = native.call("runtime_create", [
     workspace.replaceAll("\\", "/"),
@@ -293,6 +301,47 @@ process.stdout.write(JSON.stringify({executable:basename(process.execPath),abiVe
       "descriptor.json",
       Buffer.from("fixture"),
     ]);
+    assert.equal(
+      native.call("cutter_bridge_verify_directory", [runtime.path]).privateDacl,
+      true,
+    );
+    assert.equal(
+      native
+        .call("cutter_bridge_read_descriptor", [
+          runtime.path,
+          "descriptor.json",
+          64 * 1024,
+        ])
+        .toString("utf8"),
+      "fixture",
+    );
+    const descriptorJunction = join(runtime.path, "descriptor-link.json");
+    await symlink(sourceDirectory, descriptorJunction, "junction");
+    assert.throws(() =>
+      native.call("cutter_bridge_read_descriptor", [
+        runtime.path,
+        "descriptor-link.json",
+        64 * 1024,
+      ]),
+    );
+    assert.throws(
+      () =>
+        native.call("cutter_bridge_read_descriptor", [
+          runtime.path,
+          "descriptor.json",
+          3,
+        ]),
+      /byte limit/u,
+    );
+    assert.throws(
+      () =>
+        native.call("cutter_bridge_read_descriptor", [
+          runtime.path,
+          "..\\escape.json",
+          64 * 1024,
+        ]),
+      /filename component/u,
+    );
     assert.throws(() =>
       native.call("runtime_write", [
         runtime.handle,

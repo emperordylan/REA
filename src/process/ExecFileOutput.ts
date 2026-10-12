@@ -88,6 +88,7 @@ export const execFileOutputFailure = (
   const code = Reflect.get(cause, "code");
   const signal = Reflect.get(cause, "signal");
   const killed = Reflect.get(cause, "killed");
+  const outputTruncated = Reflect.get(cause, "outputTruncated");
   if (typeof stdout !== "string" || typeof stderr !== "string")
     return undefined;
   return {
@@ -96,7 +97,8 @@ export const execFileOutputFailure = (
     code: typeof code === "string" || typeof code === "number" ? code : null,
     signal: typeof signal === "string" ? signal : null,
     killed: killed === true,
-    outputTruncated: code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+    outputTruncated:
+      outputTruncated === true || code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
   };
 };
 

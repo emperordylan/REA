@@ -53,6 +53,58 @@ const sessionEvidence = effects({ mutatesSession: true });
 
 /** Explicit effect audit for every public tool. */
 export const TOOL_EFFECTS: Readonly<Record<string, ToolEffects>> = {
+  list_cutter_sessions: effects({ accessesNetwork: true }),
+  cutter_command: effects({
+    mutatesTarget: true,
+    mutatesSession: true,
+    writesFilesystem: true,
+    launchesProcess: true,
+    accessesNetwork: true,
+    changesUiState: true,
+    idempotent: false,
+  }),
+  inspect_with_objdump: effects({
+    mutatesSession: true,
+    launchesProcess: true,
+  }),
+  start_gdb_session: effects({ launchesProcess: true, mutatesSession: true }),
+  gdb_console: effects({
+    mutatesTarget: true,
+    mutatesSession: true,
+    writesFilesystem: true,
+    launchesProcess: true,
+    accessesNetwork: true,
+    idempotent: false,
+  }),
+  gdb_session_status: effects(),
+  close_gdb_session: effects({ launchesProcess: true, mutatesSession: true }),
+  start_rizin_debug_session: effects({
+    mutatesSession: true,
+    launchesProcess: true,
+  }),
+  rizin_debug_command: effects({
+    mutatesTarget: true,
+    mutatesSession: true,
+    writesFilesystem: true,
+    launchesProcess: true,
+    accessesNetwork: true,
+    changesUiState: true,
+    mayDiscardData: true,
+    idempotent: false,
+  }),
+  rizin_debug_session_status: effects({ mutatesSession: true }),
+  close_rizin_debug_session: effects({
+    mutatesSession: true,
+    launchesProcess: true,
+  }),
+  execute_rizin_command: effects({
+    mutatesTarget: true,
+    mutatesSession: true,
+    writesFilesystem: true,
+    launchesProcess: true,
+    accessesNetwork: true,
+    idempotent: false,
+  }),
   inspect_wasm_artifact: effects({
     mutatesSession: true,
     writesFilesystem: true,

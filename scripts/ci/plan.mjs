@@ -5,6 +5,7 @@ import { SCOPES } from "./scopes.mjs";
 
 const flags = [
   "code",
+  "reverse_tools",
   "runtime",
   "package",
   "apple",
@@ -30,6 +31,47 @@ const FIXTURE_SOURCES = [
   "tests/conformance/versions/**",
 ];
 const READINESS_SOURCES = ["tests/conformance/readiness/**"];
+const REVERSE_TOOL_SOURCES = [
+  "src/application/reverse/**",
+  "src/cutter/**",
+  "src/gdb/**",
+  "src/objdump/**",
+  "src/process/ownedDebuggerSession.ts",
+  "src/rizin/**",
+  "src/contracts/*ToolContracts.ts",
+  "src/server/registerCutterTools.ts",
+  "src/server/registerGdbTools.ts",
+  "src/server/registerReverseEngineeringTools.ts",
+  "src/server/providerEnvironment.ts",
+  "src/process/ExecFileOutput.ts",
+  "src/process/ExecFileOutput.test.ts",
+  "tests/boundary/providers/DebuggerSessionManagers.test.ts",
+  "tests/boundary/providers/DebuggerSessionReviewRegressions.test.ts",
+  "tests/boundary/providers/RizinDebugSessionCoverage.test.ts",
+  "src/server/registerRizinDebugTools.ts",
+  "tests/boundary/providers/CutterBridge*.test.ts",
+  "tests/boundary/providers/GdbSession*.test.ts",
+  "tests/boundary/providers/RizinDebugSessionCoverage.part*.test.ts",
+  "tests/boundary/providers/RizinCommandTimeout.test.ts",
+  "tests/boundary/providers/RizinTimeoutEvidence.test.ts",
+  "tests/boundary/providers/RizinDebugSession*.test.ts",
+  "tests/boundary/process/ownedDebuggerSession.test.ts",
+  "tests/boundary/mcp/cutter*.test.ts",
+  "tests/boundary/mcp/gdbCancellationMcp.test.ts",
+  "tests/boundary/mcp/debuggerCancellationMcp.test.ts",
+  "tests/boundary/mcp/rizinDebuggerCancellationMcp.test.ts",
+  "tests/boundary/mcp/reverseEngineeringPartialMcp.test.ts",
+  "tests/boundary/mcp/reverseEngineeringEnvironmentMcp.test.ts",
+  "tests/processOwnershipRunner.ts",
+  "tests/composition/reverseEngineering*.test.ts",
+  "vitest.reverse-tools.config.ts",
+  "vitest.reverse-tools-semantics.config.ts",
+  "stryker.config.json",
+  "stryker.semantics.config.json",
+  "tsconfig.reverse-tools-mutation.json",
+  "vitest.timeout.config.ts",
+  "scripts/prepare-reverse-tools-mutation.mjs",
+];
 const matchesAny = (file, patterns) =>
   patterns.some((pattern) => matchesGlob(file, pattern));
 const selected = Object.fromEntries(flags.map((flag) => [flag, false]));
@@ -57,6 +99,8 @@ function classifyPackage(base, head) {
     ]),
   ].filter((key) => beforeScripts?.[key] !== afterScripts?.[key]);
   for (const script of changed) {
+    if (/^test:(coverage|mutation):reverse-tools$/.test(script))
+      selected.reverse_tools = true;
     if (
       /^(test(?::|$)|check(?::|$)|lint(?::|$)|format(?::|$)|knip$|jscpd$)/.test(
         script,
@@ -118,6 +162,7 @@ if (
     .split("\0")
     .filter(Boolean);
   for (const file of files) {
+    if (matchesAny(file, REVERSE_TOOL_SOURCES)) selected.reverse_tools = true;
     if (
       /^(README(?:_[^/]+)?\.md|AGENTS\.md|CONTRIBUTING\.md)$/.test(file) ||
       file.startsWith("docs/")

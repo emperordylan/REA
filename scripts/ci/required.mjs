@@ -3,6 +3,7 @@ const outputs = jobs.changes.outputs;
 const required = ["changes", "static", "test"];
 const lanes = {
   code: ["build", "test-shard"],
+  reverse_tools: ["reverse-tools-quality"],
   runtime: ["windows-native-build", "package-e2e"],
   package: ["windows-curated"],
   apple: ["apple-artifacts"],

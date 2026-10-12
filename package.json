@@ -138,6 +138,10 @@
     "test:integration": "vitest run --project boundary --project cli-boundary --project process-boundary --project mcp-boundary --project process-global --project acceptance",
     "pretest:coverage": "npm run test:prepare",
     "test:coverage": "vitest run --coverage.enabled --coverage.provider=v8",
+    "test:coverage:reverse-tools": "vitest run --config vitest.reverse-tools.config.ts --coverage.enabled",
+    "pretest:coverage:reverse-tools": "npm run test:prepare",
+    "test:mutation:reverse-tools": "node scripts/prepare-reverse-tools-mutation.mjs && stryker run stryker.config.json && stryker run stryker.semantics.config.json",
+    "pretest:mutation:reverse-tools": "npm run test:prepare",
     "test:ci": "npm run test:coverage -- --reporter=default --reporter=junit --outputFile.junit=test-results.xml",
     "pretest:ci:shard": "npm run test:prepare",
     "test:ci:shard": "npm run test:ci:shard:run",
@@ -319,6 +323,9 @@
   },
   "devDependencies": {
     "@fast-check/vitest": "0.5.0",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/typescript-checker": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/cross-spawn": "6.0.6",
     "@types/node": "26.6.4",
     "@types/semver": "7.7.1",
@@ -335,6 +342,7 @@
     "turbo": "2.11.7",
     "typescript": "7.0.2",
     "typescript-termux": "npm:typescript@5.9.3",
+    "typescript6": "npm:typescript@6.0.3",
     "vitepress": "1.6.4",
     "vitest": "5.0.3"
   }

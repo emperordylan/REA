@@ -1,0 +1,52 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "plugins": [
+    "@stryker-mutator/typescript-checker",
+    "@stryker-mutator/vitest-runner"
+  ],
+  "vitest": {
+    "configFile": "vitest.reverse-tools.config.ts",
+    "related": true
+  },
+  "checkers": ["typescript"],
+  "tsconfigFile": "tsconfig.reverse-tools-mutation.json",
+  "typescriptChecker": {
+    "prioritizePerformanceOverAccuracy": true
+  },
+  "coverageAnalysis": "perTest",
+  "mutate": [
+    "src/application/reverse/ReverseEngineeringService.ts:209-211",
+    "src/application/reverse/ReverseEngineeringService.ts:154-180",
+    "src/application/reverse/ReverseEngineeringService.ts:176-207",
+    "src/application/reverse/ReverseEngineeringService.ts:226-240",
+    "src/application/reverse/ReverseEngineeringService.ts:288-292",
+    "src/application/reverse/ReverseEngineeringService.ts:294-303",
+    "src/application/reverse/ReverseEngineeringService.ts:343-361",
+    "src/application/reverse/ReverseEngineeringService.ts:369-369",
+    "src/application/reverse/ReverseEngineeringService.ts:377-377",
+    "src/application/reverse/ReverseEngineeringService.ts:381-417",
+    "src/process/ExecFileOutput.ts:101-101",
+    "src/server/providerEnvironment.ts:4-8",
+    "src/server/registerReverseEngineeringTools.ts:21-54",
+    "src/server/registerReverseEngineeringTools.ts:57-78",
+    "src/gdb/GdbSessionManager.ts:68-69",
+    "src/gdb/GdbSessionManager.ts:71-73",
+    "src/gdb/GdbSessionManager.ts:216-230",
+    "src/gdb/GdbSessionManager.ts:390-390",
+    "src/gdb/GdbSessionManager.ts:392-392",
+    "src/gdb/GdbSessionManager.ts:418-435",
+    "src/process/ownedDebuggerSession.ts:28-51",
+    "src/process/ownedDebuggerSession.ts:58-82",
+    "src/rizin/RizinDebugSessionManager.ts:461-485",
+    "src/rizin/RizinDebugSessionManager.ts:731-732"
+  ],
+  "thresholds": {
+    "high": 100,
+    "low": 100,
+    "break": 100
+  },
+  "concurrency": 2,
+  "timeoutMS": 30000,
+  "reporters": ["clear-text", "progress", "html", "json"]
+}
