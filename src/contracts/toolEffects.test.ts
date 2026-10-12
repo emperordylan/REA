@@ -13,6 +13,9 @@ const EXECUTION_WORDING =
   /\b(?:run|runs|running|launch|launches|launching|execute|executes|executing|execution|start|starts|install|installs|uninstall|uninstalls)\b/iu;
 
 const EXECUTION_WORDING_EXCEPTIONS: Readonly<Record<string, string>> = {
+  inspect_with_objdump: "runs a caller-selected inspection tool, not target code",
+  execute_rizin_command: "runs the Rizin analyzer and command, not foreign code",
+  start_gdb_session: "starts a debugger session; execution is attributed to gdb_console",
   inspect_native_load_image: "states that it does not execute the target",
   resolve_native_call_targets: "states that it does not execute code",
   inspect_pe_resources: "states that it does not execute the image",
@@ -114,6 +117,9 @@ describe("tool effects", () => {
       "capture_electron_scenario",
       "capture_native_ui_scenario",
       "capture_process_scenario",
+      "gdb_console",
+
+      "execute_rizin_command",
       "install_adb_package",
       "observe_native_calls",
       "push_adb_file",

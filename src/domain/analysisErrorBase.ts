@@ -60,7 +60,7 @@ export interface AnalysisErrorOptions extends ErrorOptions {
 export abstract class AnalysisError extends Error {
   readonly capturedOutput: AnalysisCapturedOutput | undefined;
   readonly cleanup: AnalysisCleanupObservation | undefined;
-  readonly cleanupIncomplete: boolean;
+  cleanupIncomplete: boolean;
   readonly cleanupResources: readonly string[];
   constructor(message: string, options?: AnalysisErrorOptions) {
     super(message, options);
@@ -83,6 +83,12 @@ export abstract class AnalysisError extends Error {
   /** Retain a completed observation when a later step fails. */
   retainPartialObservation(observation: AnalysisPartialObservation): this {
     this.partialObservation ??= observation;
+    return this;
+  }
+
+  /** Clear stale cleanup-incomplete status after an owner confirms retry success. */
+  resolveCleanup(): this {
+    this.cleanupIncomplete = false;
     return this;
   }
 }

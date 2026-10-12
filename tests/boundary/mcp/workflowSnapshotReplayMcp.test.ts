@@ -1,5 +1,5 @@
 import { parseConfig } from "../../../src/config/parseConfig.js";
-import { writeFile } from "node:fs/promises";
+import { access, chmod, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
@@ -42,6 +42,83 @@ afterEach(async () => {
 });
 
 describe("MCP composed workflow target admission", () => {
+  it.skipIf(process.platform === "win32")(
+    "drains a reverse-engineering call and records its Evidence before close_binary snapshots the ledger",
+    async () => {
+      const { targetPaths, snapshotPath } = await createWorkflowFiles(
+        "rea-mcp-admitted-reverse-",
+        ["target.hop"],
+      );
+      const targetPath = targetPaths[0];
+      if (targetPath === undefined)
+        throw new Error("Expected one workflow target");
+      const fixtureDirectory = dirname(snapshotPath);
+      const startedPath = join(fixtureDirectory, "rizin-started");
+      const releasePath = join(fixtureDirectory, "rizin-release");
+      const providerPath = join(fixtureDirectory, "rizin-fixture.mjs");
+      await writeFile(
+        providerPath,
+        `#!${process.execPath}\nimport { existsSync, writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(startedPath)}, "started");\nwhile (!existsSync(${JSON.stringify(releasePath)})) await new Promise((resolve) => setTimeout(resolve, 5));\nprocess.stdout.write("Rizin fixture output\\n");\n`,
+      );
+      await chmod(providerPath, 0o755);
+      const session = createWorkflowSession(makeProvider([], []));
+      const { mcp } = await connectWorkflowMcp(
+        session,
+        "admitted-reverse-engineering",
+        { REA_RIZIN_COMMAND: providerPath },
+      );
+      await openWorkflowTarget(mcp, targetPath);
+
+      const analysisRequest = mcp.callTool({
+        name: "execute_rizin_command",
+        arguments: { path: targetPath, command: "iI" },
+      });
+      const readyDeadline = Date.now() + 5_000;
+      while (Date.now() < readyDeadline) {
+        try {
+          await access(startedPath);
+          break;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      }
+      await expect(access(startedPath)).resolves.toBeUndefined();
+
+      let closeSettled = false;
+      const closeRequest = mcp
+        .callTool({
+          name: "close_binary",
+          arguments: { snapshot_path: snapshotPath },
+        })
+        .finally(() => {
+          closeSettled = true;
+        });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(closeSettled).toBe(false);
+      await expect(access(snapshotPath)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+
+      await writeFile(releasePath, "release");
+      const analyzed = await analysisRequest;
+      expect(analyzed.isError, JSON.stringify(analyzed.content)).not.toBe(true);
+      const evidence = toolContract("execute_rizin_command").outputSchema.parse(
+        analyzed.structuredContent,
+      );
+      const closed = await closeRequest;
+      expect(closed.isError, JSON.stringify(closed.content)).not.toBe(true);
+      const snapshot = await readAnalysisSnapshot(snapshotPath);
+      if (!snapshot.ok) throw snapshot.error;
+      expect(snapshot.value.evidence_bundle.records).toContainEqual(
+        expect.objectContaining({
+          evidence_id: evidence.evidence_id,
+          operation: "execute_rizin_command",
+          subject: expect.objectContaining({ local_path: targetPath }),
+        }),
+      );
+    },
+  );
+
   it("keeps a composed result and snapshot on its admitted target across queued close and open", async () => {
     const { targetPaths, snapshotPath } = await createWorkflowFiles(
       "rea-mcp-admitted-workflow-",
@@ -443,10 +520,14 @@ const createWorkflowSession = (provider: AnalysisProvider) =>
 const connectWorkflowMcp = async (
   session: ReturnType<typeof createWorkflowSession>,
   clientName: string,
+  providerEnvironment?: Readonly<NodeJS.ProcessEnv>,
 ): Promise<{ readonly mcp: Client }> => {
   const server = createServer(
     { kind: "session", session },
-    { logger: silentLogger },
+    {
+      logger: silentLogger,
+      ...(providerEnvironment === undefined ? {} : { providerEnvironment }),
+    },
   );
   const mcp = new Client({ name: clientName, version: "1.0.0" });
   const [clientTransport, serverTransport] =

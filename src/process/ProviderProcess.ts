@@ -6,10 +6,14 @@ import { WindowsOwnedProcess } from "../windows/WindowsOwnedProcess.js";
 
 import type {
   OwnedProcessGroup,
+  ProcessOwnershipBaseline,
   ProcessCleanupFailure,
   ProcessCleanupResult,
 } from "./ProcessOwnership.js";
-import { prepareProcessOwnershipInspection } from "./ProcessOwnershipObservation.js";
+import {
+  prepareProcessOwnershipInspection,
+  systemProcessOwnershipHost,
+} from "./ProcessOwnershipObservation.js";
 
 const DEFAULT_TERMINATION_GRACE_MS = 250;
 const DEFAULT_KILL_GRACE_MS = 1_000;
@@ -36,6 +40,8 @@ export interface OwnedProviderProcessSpawnOptions {
    * Windows Job Object. Other launchers cannot enforce it and refuse it.
    */
   readonly memoryLimitBytes?: number;
+  /** Sweep exact run-token descendants during POSIX cleanup. */
+  readonly sweepTokenOwnedProcesses?: boolean;
   /** Cancels native ownership preparation before provider process creation. */
   readonly signal?: AbortSignal;
 }
@@ -84,6 +90,8 @@ export interface ProviderProcessSnapshot {
   readonly diagnosticTruncated?: boolean;
   readonly stdout: {
     readonly text: string;
+    /** True when retained bytes cannot be represented exactly as UTF-8 text. */
+    readonly invalidUtf8?: true;
     /** Bytes retained in text, limited by maxDiagnosticBytes when configured. */
     readonly bytes: number;
     /** All bytes drained from this stream since construction or resetOutput. */
@@ -91,6 +99,8 @@ export interface ProviderProcessSnapshot {
   };
   readonly stderr: {
     readonly text: string;
+    /** True when retained bytes cannot be represented exactly as UTF-8 text. */
+    readonly invalidUtf8?: true;
     /** Bytes retained in text, limited by maxDiagnosticBytes when configured. */
     readonly bytes: number;
     readonly observedBytes: number;
@@ -163,6 +173,16 @@ export const spawnOwnedProviderProcess = async (
   await prepareProcessOwnershipInspection(options.signal);
   options.signal?.throwIfAborted();
   const platform = options.platform ?? process.platform;
+  const sweepTokenOwnedProcesses =
+    options.sweepTokenOwnedProcesses === true && platform !== "win32";
+  let captureBaseline: ProcessOwnershipBaseline | undefined;
+  if (sweepTokenOwnedProcesses) {
+    const capture = systemProcessOwnershipHost.captureBaseline;
+    if (capture === undefined)
+      throw new Error("Process ownership baseline is unavailable on this host");
+    captureBaseline = await capture(options.signal);
+    options.signal?.throwIfAborted();
+  }
   const hostEnvironment = options.hostEnvironment ?? process.env;
   const environment = {
     ...hostEnvironment,
@@ -215,6 +235,12 @@ export const spawnOwnedProviderProcess = async (
     leaderPid: pid,
     processGroupId: pid,
     expectedParentPid: process.pid,
+    ...(sweepTokenOwnedProcesses
+      ? {
+          sweepTokenOwnedProcesses: true,
+          captureBaseline: captureBaseline!,
+        }
+      : {}),
     ...(options.expectedCommand === null
       ? {}
       : { expectedCommand: options.expectedCommand ?? options.command }),
@@ -324,13 +350,25 @@ export class ProviderProcessSupervisor {
     );
   }
 
-  /** Wait until the producer has closed its output streams; exit alone does not prove complete output. */
+  /** Wait until output streams close; WindowsOwnedProcess closes only after its whole Job Object settles. */
   async waitForOutputClose(timeoutMs: number): Promise<boolean> {
     return waitForProcessEvent(
       this.#outputClosed,
       this.#outputClose.promise,
       timeoutMs,
     );
+  }
+
+  /** Unreference inherited output pipes without closing streams shared with descendants. */
+  unrefOutputStreams(): void {
+    for (const stream of [
+      this.launch.process.stdout,
+      this.launch.process.stderr,
+    ]) {
+      const unref = (stream as (Readable & { unref?: () => void }) | null)
+        ?.unref;
+      unref?.call(stream);
+    }
   }
 
   /** Share each stop attempt; incomplete cleanup retains ownership and permits retry. */
@@ -528,11 +566,19 @@ class ProcessOutputCapture {
   }
 
   snapshot(observedBytes: number): ProviderProcessSnapshot["stdout"] {
-    const text = Buffer.concat(this.#chunks, this.#bytes).toString("utf8");
+    const buffer = Buffer.concat(this.#chunks, this.#bytes);
+    const text = buffer.toString("utf8");
+    let invalidUtf8 = false;
+    try {
+      new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+    } catch {
+      invalidUtf8 = true;
+    }
     return {
       text,
       bytes: this.#bytes,
       observedBytes,
+      ...(invalidUtf8 ? { invalidUtf8: true } : {}),
     };
   }
 }
