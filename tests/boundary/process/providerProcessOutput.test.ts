@@ -1,4 +1,5 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import type { Socket } from "node:net";
 import {
   ProviderProcessSupervisor,
   type ProviderProcessDiagnostic,
@@ -7,6 +8,26 @@ import {
   spawnProviderProcessFixture,
   stopProviderProcessFixture,
 } from "../../fixtures/providerProcess.js";
+
+it("unreferences inherited output streams without closing them", async () => {
+  const child = spawnProviderProcessFixture("stubborn");
+  const supervisor = new ProviderProcessSupervisor({
+    process: child,
+    ownsProcessLifetime: true,
+  });
+  const stdoutUnref = vi.spyOn(child.stdout as Socket, "unref");
+  const stderrUnref = vi.spyOn(child.stderr as Socket, "unref");
+  try {
+    supervisor.unrefOutputStreams();
+    expect(stdoutUnref).toHaveBeenCalledOnce();
+    expect(stderrUnref).toHaveBeenCalledOnce();
+    expect(child.stdout!.destroyed).toBe(false);
+    expect(child.stderr!.destroyed).toBe(false);
+  } finally {
+    await supervisor.stop();
+    await stopProviderProcessFixture(child);
+  }
+});
 
 it("bounds capture before diagnostic callbacks while draining both output streams", async () => {
   const child = spawnProviderProcessFixture("burst", 70_000);
