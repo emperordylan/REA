@@ -335,8 +335,10 @@ RPC client syntax also contributes network endpoint candidates, in both
   named operation found at the start of a string or cooked template literal —
   the name must be followed by variable definitions (`($`), a directive, or a
   selection set starting with a field name — or in a precompiled
-  `OperationDefinition` document object. A graphql-tag `loc.source.body` copy is
-  not reported twice. Anonymous operations are not reported.
+  `OperationDefinition` document object. In a template literal, leading
+  interpolations such as fragment definitions are skipped first. A graphql-tag
+  `loc.source.body` copy is not reported twice. Anonymous operations are not
+  reported.
 
 A procedure path is the server-side procedure name, not a resolved URL; the
 transport URL depends on the link configuration and batching. When the proxy is

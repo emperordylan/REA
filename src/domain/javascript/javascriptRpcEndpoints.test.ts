@@ -278,6 +278,25 @@ describe("GraphQL operation recognition", () => {
     ]);
   });
 
+  it("recognizes operations that follow leading fragment interpolations", () => {
+    expect(
+      rpcEndpoints(`
+        const GET_POST = gql\`
+          \${CORE_COMMENT_FIELDS}
+          query CommentsForPost($postId: ID!) { post(postId: $postId) { id } }
+        \`;
+        const ADD = gql\`\${A}\${B}
+          # fragments above
+          mutation AddComment($text: String!) { addComment(text: $text) { id } }
+        \`;
+        const NOT_FIRST = \`\${prefix} text query Hidden { users { id } }\`;
+      `),
+    ).toEqual([
+      { kind: "network", value: "CommentsForPost", mechanism: "graphql:query" },
+      { kind: "network", value: "AddComment", mechanism: "graphql:mutation" },
+    ]);
+  });
+
   it("retains operations after long ignored prefixes and long headers", () => {
     const name = "Operation" + "x".repeat(512);
     const text =
