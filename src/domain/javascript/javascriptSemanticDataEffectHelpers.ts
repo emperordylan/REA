@@ -1,6 +1,7 @@
 import * as t from "@babel/types";
 
 import { semanticBuiltinNamespacePath } from "./javascriptSemanticProvenance.js";
+import { evaluateSemanticProvenance } from "./javascriptSemanticValues.js";
 
 import { semanticCallableIdForNode } from "./javascriptSemanticProjection.js";
 import {
@@ -137,7 +138,7 @@ export interface DataEffectTraversalContext {
   readonly ancestors: t.Node[];
 }
 
-/** Resolve a direct or namespace-imported built-in method. */
+/** Resolve built-in methods from the shared, unambiguous binding provenance. */
 export const builtinDataEffectMethod = (
   callee: t.Node,
   state: JavaScriptSemanticAnalysisState,
@@ -145,7 +146,8 @@ export const builtinDataEffectMethod = (
 ): string | null => {
   if (t.isIdentifier(callee)) {
     const binding = resolveSemanticBindingState(state, callee, callee.name);
-    return moduleMethod(binding, specifiers);
+    const path = builtinBindingPath(binding, state, specifiers);
+    return path?.length === 1 ? (path[0] ?? null) : null;
   }
   if (!t.isMemberExpression(callee) && !t.isOptionalMemberExpression(callee))
     return null;
@@ -155,25 +157,27 @@ export const builtinDataEffectMethod = (
     callee.object,
     callee.object.name,
   );
-  const namespace = binding?.directOrigins.some(
-    ({ specifier, importedPath }) =>
-      specifiers.includes(specifier) &&
-      semanticBuiltinNamespacePath(importedPath),
-  );
-  return namespace
+  return builtinBindingPath(binding, state, specifiers)?.length === 0
     ? semanticStaticPropertyName(callee.property, callee.computed)
     : null;
 };
 
-const moduleMethod = (
+const builtinBindingPath = (
   binding: JavaScriptSemanticBindingState | undefined,
+  state: JavaScriptSemanticAnalysisState,
   specifiers: readonly string[],
-): string | null => {
-  for (const { specifier, importedPath } of binding?.directOrigins ?? []) {
-    if (!specifiers.includes(specifier)) continue;
-    return importedPath.at(-1) ?? null;
-  }
-  return null;
+): readonly string[] | null => {
+  if (binding === undefined) return null;
+  const provenance = evaluateSemanticProvenance(binding, state);
+  if (provenance.status !== "module") return null;
+  const { specifier, importedPath } = provenance.origins[0];
+  if (!specifiers.includes(specifier)) return null;
+  // Only a direct ESM default import denotes the built-in namespace;
+  // require("node:fs").default is a literal property, not interop syntax.
+  return binding.directOrigins.length > 0 &&
+    semanticBuiltinNamespacePath(importedPath)
+    ? []
+    : importedPath;
 };
 
 /** Recognize global or node:process aliases without accepting shadowing. */
@@ -188,8 +192,9 @@ export const isSemanticProcessObject = (
       node.name === "process" &&
       !semanticResolutionBlocked(state, node, node.name)
     );
-  return binding.directOrigins.some(
-    ({ specifier }) => specifier === "process" || specifier === "node:process",
+  return (
+    builtinBindingPath(binding, state, ["process", "node:process"])?.length ===
+    0
   );
 };
 

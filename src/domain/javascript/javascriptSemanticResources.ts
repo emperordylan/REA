@@ -1,7 +1,5 @@
 import * as t from "@babel/types";
 
-import { semanticBuiltinNamespacePath } from "./javascriptSemanticProvenance.js";
-
 import type {
   JavaScriptSemanticCallable,
   JavaScriptSemanticResourceOperation,
@@ -13,6 +11,7 @@ import {
   type JavaScriptSemanticBindingState,
 } from "./javascriptSemanticState.js";
 import {
+  builtinDataEffectMethod,
   dataEffectMemberCallee,
   outerDataEffectBinding,
   traverseDataEffects,
@@ -137,49 +136,7 @@ const acquisitionMethod = (
   callee: t.Node,
   state: JavaScriptSemanticAnalysisState,
 ): JavaScriptSemanticResourceOperation["method"] | null => {
-  if (t.isIdentifier(callee)) {
-    const binding = resolveSemanticBindingState(state, callee, callee.name);
-    return methodFromBinding(binding);
-  }
-  if (!t.isMemberExpression(callee) && !t.isOptionalMemberExpression(callee))
-    return null;
-  const method = ACQUIRE_METHODS.find(
-    (candidate) =>
-      candidate ===
-      semanticStaticPropertyName(callee.property, callee.computed),
-  );
-  if (method === undefined || !t.isIdentifier(callee.object)) return null;
-  const binding = resolveSemanticBindingState(
-    state,
-    callee.object,
-    callee.object.name,
-  );
-  return resourceNamespace(binding) ? method : null;
-};
-
-const methodFromBinding = (
-  binding: JavaScriptSemanticBindingState | undefined,
-): JavaScriptSemanticResourceOperation["method"] | null => {
-  for (const { specifier, importedPath } of binding?.directOrigins ?? []) {
-    if (!resourceModule(specifier)) continue;
-    const method = ACQUIRE_METHODS.find(
-      (candidate) => candidate === importedPath.at(-1),
-    );
-    if (method !== undefined) return method;
-  }
-  return null;
-};
-
-const resourceNamespace = (
-  binding: JavaScriptSemanticBindingState | undefined,
-): boolean =>
-  binding?.directOrigins.some(
-    ({ specifier, importedPath }) =>
-      resourceModule(specifier) && semanticBuiltinNamespacePath(importedPath),
-  ) ?? false;
-
-const resourceModule = (specifier: string): boolean =>
-  [
+  const method = builtinDataEffectMethod(callee, state, [
     "fs",
     "fs/promises",
     "net",
@@ -188,7 +145,8 @@ const resourceModule = (specifier: string): boolean =>
     "node:net",
     "node:tls",
     "tls",
-  ].includes(specifier);
-
+  ]);
+  return ACQUIRE_METHODS.find((candidate) => candidate === method) ?? null;
+};
 const resourceCandidateId = (candidate: ResourceCandidate): string =>
   `resource:acquire:${String(candidate.node.start ?? -1)}:${String(candidate.node.end ?? -1)}`;

@@ -8,8 +8,86 @@ import { expect, it } from "vitest";
 import { parseEvidence } from "../../../src/domain/evidence.js";
 import { javascriptApplicationAnalysisResultSchema } from "../../../src/domain/javascript/javascriptApplicationAnalysis.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
+import { connectLocalToolsMcp } from "../../fixtures/localToolsMcp.js";
 
 const execute = promisify(execFile);
+
+it("retains CommonJS builtin effects and handle links through CLI and MCP", async () => {
+  const root = await createTestTempDirectory("rea-builtin-commonjs-");
+  await writeFile(
+    join(root, "app.cjs"),
+    `
+    throw new Error("This source must only be parsed, never executed");
+    const fs = require("node:fs");
+    const {spawn: launch} = require("node:child_process");
+    const timers = require("timers");
+    const {get} = require("http");
+    const proc = require("node:process");
+    const text = fs.readFileSync("config.json", "utf8");
+    const stream = fs.createReadStream("config.json"); stream.destroy();
+    const child = launch("tool", []); child.kill("SIGTERM");
+    const timer = timers.setTimeout(callback, 10); timers.clearTimeout(timer);
+    get("http://example.test");
+    const mode = proc.env.MODE;
+    const absent = require("node:fs").default; absent.readFileSync("wrong-default");
+    const external = require("./fs.js"); external.readFileSync("wrong-external");
+    function shadowed(require) { const fs = require("node:fs"); fs.readFileSync("wrong"); }
+  `,
+  );
+  const { stdout } = await execute(
+    process.execPath,
+    ["scripts/rea.mjs", "analyze-javascript-application", root, "--json"],
+    { cwd: process.cwd(), maxBuffer: 16 * 1024 * 1024 },
+  );
+  const evidence = parseEvidence(JSON.parse(stdout));
+  const result = javascriptApplicationAnalysisResultSchema.parse(
+    evidence.normalized_result,
+  );
+  const nodes = result.semantic_graph.nodes;
+  expect(
+    nodes.filter(({ kind }) =>
+      [
+        "config-source",
+        "resource",
+        "child-process",
+        "timer",
+        "request",
+      ].includes(kind),
+    ),
+  ).toHaveLength(6);
+  expect(nodes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: "config-source",
+        properties: expect.objectContaining({ key: "config.json" }),
+      }),
+      expect.objectContaining({
+        kind: "config-source",
+        properties: expect.objectContaining({ key: "MODE" }),
+      }),
+      ...["createReadStream", "spawn", "setTimeout", "get"].map((method) =>
+        expect.objectContaining({
+          properties: expect.objectContaining({ method }),
+        }),
+      ),
+    ]),
+  );
+  const relations = result.semantic_graph.relations;
+  for (const relation of ["releases", "forwards-signal", "cancels-timer"])
+    expect(relations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ relation, resolution: "resolved" }),
+      ]),
+    );
+  const { client, call } = await connectLocalToolsMcp();
+  const response = await call("analyze_javascript_application", {
+    input_path: root,
+    format: "auto",
+  });
+  expect(response.isError, JSON.stringify(response)).not.toBe(true);
+  expect(response.structuredContent).toEqual(evidence);
+  await client.ping();
+}, 60000);
 
 it.each([
   "import fs from 'node:fs';",

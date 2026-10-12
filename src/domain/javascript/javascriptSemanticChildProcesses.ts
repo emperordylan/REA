@@ -1,7 +1,5 @@
 import * as t from "@babel/types";
 
-import { semanticBuiltinNamespacePath } from "./javascriptSemanticProvenance.js";
-
 import type {
   JavaScriptSemanticCallable,
   JavaScriptSemanticChildProcessInteraction,
@@ -18,6 +16,7 @@ import { compareUnicodeCodePoints } from "../unicodeCodePointOrder.js";
 import { traverseJavaScriptAst } from "./javascriptSemanticTraversal.js";
 import { range } from "./javascriptStaticAnalysisHelpers.js";
 import {
+  builtinDataEffectMethod,
   dataEffectLiteralString,
   dataEffectMemberCallee,
   assignedSemanticResultBindings,
@@ -266,52 +265,14 @@ const childProcessMethod = (
   callee: t.Node,
   state: JavaScriptSemanticAnalysisState,
 ): JavaScriptSemanticChildProcessSpawn["method"] | null => {
-  if (t.isIdentifier(callee)) {
-    const binding = resolveSemanticBindingState(state, callee, callee.name);
-    return binding === undefined ? null : methodFromBinding(binding);
-  }
-  if (!t.isMemberExpression(callee) && !t.isOptionalMemberExpression(callee))
-    return null;
-  const method = admittedChildMethod(
-    semanticStaticPropertyName(callee.property, callee.computed),
+  const method = builtinDataEffectMethod(callee, state, [
+    "child_process",
+    "node:child_process",
+  ]);
+  return (
+    CHILD_PROCESS_METHODS.find((candidate) => candidate === method) ?? null
   );
-  if (method === null || !t.isIdentifier(callee.object)) return null;
-  const binding = resolveSemanticBindingState(
-    state,
-    callee.object,
-    callee.object.name,
-  );
-  return childProcessNamespace(binding) ? method : null;
 };
-
-const methodFromBinding = (
-  binding: JavaScriptSemanticBindingState,
-): JavaScriptSemanticChildProcessSpawn["method"] | null => {
-  for (const { specifier, importedPath } of binding.directOrigins) {
-    if (!childProcessModule(specifier)) continue;
-    const method = admittedChildMethod(importedPath.at(-1) ?? "");
-    if (method !== null) return method;
-  }
-  return null;
-};
-
-const admittedChildMethod = (
-  value: string,
-): JavaScriptSemanticChildProcessSpawn["method"] | null =>
-  CHILD_PROCESS_METHODS.find((candidate) => candidate === value) ?? null;
-
-const childProcessNamespace = (
-  binding: JavaScriptSemanticBindingState | undefined,
-): boolean =>
-  binding?.directOrigins.some(
-    ({ specifier, importedPath }) =>
-      childProcessModule(specifier) &&
-      semanticBuiltinNamespacePath(importedPath),
-  ) ?? false;
-
-const childProcessModule = (specifier: string): boolean =>
-  specifier === "child_process" || specifier === "node:child_process";
-
 const resolveChildCandidates = (
   node: t.Node,
   binding: JavaScriptSemanticBindingState | undefined,
