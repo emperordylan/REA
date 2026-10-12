@@ -37,4 +37,49 @@ describe("JavaScript static analysis findings", () => {
       10_001,
     );
   });
+
+  it.each([false, true])(
+    "retains Electron findings after many ordinary container writes (selected slot: %s)",
+    (mutateElectron) => {
+      const writes = Array.from(
+        { length: 1_001 },
+        (_, index) => `box.key${index}=${index};`,
+      );
+      const analysis = analyzeJavaScriptStaticSource(
+        [
+          'const e=require("electron"); const box={};',
+          ...(mutateElectron ? ["box.ipc=e.ipcMain;"] : []),
+          ...writes,
+          ...(mutateElectron ? ["delete box.ipc.on;"] : []),
+          'e.ipcMain.handle("direct:retained",event=>event.sender.copy());',
+          "function handle(channel,handler){e.ipcMain.handle(channel,handler);}",
+          'handle("wrapped:retained",event=>event.sender.copy());',
+          'e.ipcMain.on("selected:method",event=>event.sender.copy());',
+        ].join("\n"),
+      );
+      expect(analysis.parse_error_count).toBe(0);
+      expect(
+        analysis.limitations.some((limitation) =>
+          limitation.includes("resource budget"),
+        ),
+      ).toBe(false);
+      expect(
+        analysis.electron.ipc.filter(({ channel }) => channel !== null),
+      ).toMatchObject([
+        { channel: "direct:retained", operation: "handle" },
+        ...(mutateElectron
+          ? []
+          : [{ channel: "selected:method", operation: "on" }]),
+        { channel: "wrapped:retained", operation: "handle" },
+      ]);
+      expect(analysis.electron.call_paths).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            channel: "wrapped:retained",
+            terminal: "ipc-event.sender.copy",
+          }),
+        ]),
+      );
+    },
+  );
 });
