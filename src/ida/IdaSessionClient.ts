@@ -506,6 +506,7 @@ export class IdaSessionClient implements AnalysisClient {
       this.#closed = true;
       return ok(null);
     } catch (cause: unknown) {
+      this.connection.detach();
       return err(
         new IdaCleanupError(
           this.#workspace?.directory ?? "IDA MCP connection",
